@@ -281,6 +281,37 @@ export async function setActivityGroups(
   return { ok: true };
 }
 
+export async function setSubmissionReviewed(
+  submissionId: string,
+  reviewed: boolean,
+): Promise<ActionResult> {
+  const auth = await requireAdmin();
+  if (!auth.ok) return auth;
+  if (typeof submissionId !== 'string' || !submissionId.length) {
+    return { ok: false, error: 'Invalid submission' };
+  }
+
+  const supabase = createAdminClient();
+  const { data: updated, error } = await supabase
+    .from('submissions')
+    .update({
+      status: reviewed ? 'reviewed' : 'submitted',
+      reviewed_at: reviewed ? new Date().toISOString() : null,
+    })
+    .eq('id', submissionId)
+    .select('activity_id')
+    .single();
+
+  if (error || !updated) {
+    console.error('[admin/activities] setSubmissionReviewed failed', error);
+    return { ok: false, error: 'Could not update submission' };
+  }
+
+  revalidatePath(`/admin/activities/${updated.activity_id}`);
+  revalidatePath('/admin/trainees');
+  return { ok: true };
+}
+
 export async function deleteActivity(id: string): Promise<ActionResult> {
   const auth = await requireAdmin();
   if (!auth.ok) return auth;

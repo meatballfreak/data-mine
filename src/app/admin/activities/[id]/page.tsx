@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import type { Question } from '../actions';
 import type { GroupOption } from '../GroupPicker';
 import EditActivityForm from './EditActivityForm';
+import SubmissionsList, { type SubmissionRow } from './SubmissionsList';
 
 type ActivityDetail = {
   id: string;
@@ -47,6 +48,48 @@ async function fetchActivity(id: string): Promise<ActivityDetail | null> {
   };
 }
 
+async function fetchSubmissions(activityId: string): Promise<SubmissionRow[]> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from('submissions')
+    .select(
+      'id, profile_id, answers, status, created_at, reviewed_at, profiles(full_name)',
+    )
+    .eq('activity_id', activityId)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('[admin/activities/:id] fetch submissions failed', error);
+    return [];
+  }
+
+  return (data ?? []).map((row) => {
+    // Supabase typegen infers an embedded FK as an array even when the
+    // relationship is one-to-one; at runtime it's a single object. Cast
+    // through unknown to accept either shape.
+    const profileRaw = row.profiles as unknown;
+    const profile = Array.isArray(profileRaw)
+      ? (profileRaw[0] as { full_name: string | null } | undefined) ?? null
+      : (profileRaw as { full_name: string | null } | null);
+    const rawAnswers = row.answers;
+    const answers: Record<string, string> = {};
+    if (rawAnswers && typeof rawAnswers === 'object' && !Array.isArray(rawAnswers)) {
+      for (const [k, v] of Object.entries(rawAnswers)) {
+        if (typeof v === 'string') answers[k] = v;
+      }
+    }
+    return {
+      id: row.id as string,
+      profileId: row.profile_id as string,
+      fullName: profile?.full_name ?? null,
+      answers,
+      status: row.status as 'submitted' | 'reviewed',
+      createdAt: row.created_at as string,
+      reviewedAt: (row.reviewed_at as string | null) ?? null,
+    };
+  });
+}
+
 async function fetchGroupOptions(): Promise<GroupOption[]> {
   const supabase = createAdminClient();
   const { data, error } = await supabase
@@ -69,9 +112,10 @@ export default async function EditActivityPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [activity, groups] = await Promise.all([
+  const [activity, groups, submissions] = await Promise.all([
     fetchActivity(id),
     fetchGroupOptions(),
+    fetchSubmissions(id),
   ]);
   if (!activity) notFound();
 
@@ -92,6 +136,17 @@ export default async function EditActivityPage({
         </p>
       </div>
       <EditActivityForm activity={activity} groups={groups} />
+      {activity.type === 'qa' ? (
+        <div className="space-y-2">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
+            Submissions ({submissions.length})
+          </h2>
+          <SubmissionsList
+            questions={activity.questions}
+            submissions={submissions}
+          />
+        </div>
+      ) : null}
     </section>
   );
 }
