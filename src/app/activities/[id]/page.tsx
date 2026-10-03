@@ -12,6 +12,7 @@ type ActivityDetail = {
   description: string | null;
   type: 'qa' | 'file';
   questions: Question[];
+  points: number;
 };
 
 async function fetchActivity(id: string): Promise<ActivityDetail | null> {
@@ -21,7 +22,7 @@ async function fetchActivity(id: string): Promise<ActivityDetail | null> {
   // page below turns into a 404.
   const { data, error } = await supabase
     .from('activities')
-    .select('id, title, description, type, questions')
+    .select('id, title, description, type, questions, points')
     .eq('id', id)
     .maybeSingle();
 
@@ -39,29 +40,34 @@ async function fetchActivity(id: string): Promise<ActivityDetail | null> {
     questions: Array.isArray(data.questions)
       ? (data.questions as Question[])
       : [],
+    points: (data.points as number | null) ?? 0,
   };
 }
+
+type MySubmission = {
+  answers: Record<string, string> | null;
+  file: FileSubmission | null;
+  awardedPoints: number;
+  status: 'submitted' | 'reviewed' | null;
+};
 
 async function fetchMySubmission(
   activityId: string,
   userId: string,
-): Promise<{
-  answers: Record<string, string> | null;
-  file: FileSubmission | null;
-}> {
+): Promise<MySubmission> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('submissions')
-    .select('answers, file_name, file_url, created_at')
+    .select('answers, file_name, file_url, awarded_points, status, created_at')
     .eq('activity_id', activityId)
     .eq('profile_id', userId)
     .maybeSingle();
 
   if (error) {
     console.error('[activities/:id] submission fetch failed', error);
-    return { answers: null, file: null };
+    return { answers: null, file: null, awardedPoints: 0, status: null };
   }
-  if (!data) return { answers: null, file: null };
+  if (!data) return { answers: null, file: null, awardedPoints: 0, status: null };
 
   let answers: Record<string, string> | null = null;
   const rawAnswers = data.answers;
@@ -82,7 +88,12 @@ async function fetchMySubmission(
         }
       : null;
 
-  return { answers, file };
+  return {
+    answers,
+    file,
+    awardedPoints: (data.awarded_points as number | null) ?? 0,
+    status: (data.status as 'submitted' | 'reviewed' | null) ?? null,
+  };
 }
 
 export default async function TraineeActivityPage({
@@ -97,8 +108,9 @@ export default async function TraineeActivityPage({
   const activity = await fetchActivity(id);
   if (!activity) notFound();
 
-  const { answers: existingAnswers, file: existingFile } =
-    await fetchMySubmission(activity.id, user.id);
+  const submission = await fetchMySubmission(activity.id, user.id);
+  const locked = submission.status === 'reviewed';
+  const showScore = submission.status !== null;
 
   return (
     <section className="space-y-5">
@@ -114,7 +126,25 @@ export default async function TraineeActivityPage({
         </h1>
         <p className="text-xs uppercase tracking-wide text-slate-500">
           {activity.type === 'qa' ? 'Q&A' : 'File upload'}
+          {' · '}Max {activity.points}{' '}
+          {activity.points === 1 ? 'point' : 'points'}
         </p>
+        {showScore ? (
+          <div className="mt-2 flex items-center gap-2">
+            {locked ? (
+              <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-300">
+                Locked · Reviewed
+              </span>
+            ) : (
+              <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-300">
+                Submitted
+              </span>
+            )}
+            <span className="text-sm text-slate-200">
+              Score: {submission.awardedPoints} / {activity.points}
+            </span>
+          </div>
+        ) : null}
       </div>
 
       {activity.description ? (
@@ -126,12 +156,17 @@ export default async function TraineeActivityPage({
       ) : null}
 
       {activity.type === 'file' ? (
-        <FileSubmissionForm activityId={activity.id} existing={existingFile} />
+        <FileSubmissionForm
+          activityId={activity.id}
+          existing={submission.file}
+          locked={locked}
+        />
       ) : (
         <ActivityForm
           activityId={activity.id}
           questions={activity.questions}
-          initialAnswers={existingAnswers}
+          initialAnswers={submission.answers}
+          locked={locked}
         />
       )}
     </section>

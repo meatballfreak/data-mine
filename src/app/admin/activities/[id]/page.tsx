@@ -12,15 +12,29 @@ type ActivityDetail = {
   description: string | null;
   type: 'qa' | 'file';
   questions: Question[];
+  points: number;
   assignedGroupIds: string[];
 };
+
+function normalizeQuestions(raw: unknown): Question[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((q) => {
+    const r = q as Partial<Question>;
+    return {
+      id: typeof r.id === 'string' ? r.id : crypto.randomUUID(),
+      prompt: typeof r.prompt === 'string' ? r.prompt : '',
+      answerKey: typeof r.answerKey === 'string' ? r.answerKey : '',
+      points: typeof r.points === 'number' ? r.points : 1,
+    };
+  });
+}
 
 async function fetchActivity(id: string): Promise<ActivityDetail | null> {
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from('activities')
     .select(
-      'id, title, description, type, questions, activity_group_assignments(group_id)',
+      'id, title, description, type, questions, points, activity_group_assignments(group_id)',
     )
     .eq('id', id)
     .maybeSingle();
@@ -41,9 +55,8 @@ async function fetchActivity(id: string): Promise<ActivityDetail | null> {
     title: data.title as string,
     description: (data.description as string | null) ?? null,
     type: data.type as 'qa' | 'file',
-    questions: Array.isArray(data.questions)
-      ? (data.questions as Question[])
-      : [],
+    questions: normalizeQuestions(data.questions),
+    points: (data.points as number | null) ?? 0,
     assignedGroupIds: (assignments ?? []).map((a) => a.group_id),
   };
 }
@@ -53,7 +66,7 @@ async function fetchSubmissions(activityId: string): Promise<SubmissionRow[]> {
   const { data, error } = await supabase
     .from('submissions')
     .select(
-      'id, profile_id, answers, file_name, file_url, status, created_at, reviewed_at, profiles(full_name)',
+      'id, profile_id, answers, file_name, file_url, awarded_points, status, created_at, reviewed_at, profiles(full_name)',
     )
     .eq('activity_id', activityId)
     .order('created_at', { ascending: false });
@@ -85,6 +98,7 @@ async function fetchSubmissions(activityId: string): Promise<SubmissionRow[]> {
       answers,
       fileName: (row.file_name as string | null) ?? null,
       fileUrl: (row.file_url as string | null) ?? null,
+      awardedPoints: (row.awarded_points as number | null) ?? 0,
       status: row.status as 'submitted' | 'reviewed',
       createdAt: row.created_at as string,
       reviewedAt: (row.reviewed_at as string | null) ?? null,
@@ -144,6 +158,7 @@ export default async function EditActivityPage({
         </h2>
         <SubmissionsList
           activityType={activity.type}
+          activityMaxPoints={activity.points}
           questions={activity.questions}
           submissions={submissions}
         />

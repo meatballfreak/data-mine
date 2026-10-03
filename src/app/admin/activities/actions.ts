@@ -14,9 +14,19 @@ const MAX_TITLE = 120;
 const MAX_DESCRIPTION = 2000;
 const MAX_QUESTIONS = 50;
 const MAX_PROMPT = 500;
+const MAX_ANSWER_KEY = 1000;
+const MAX_POINTS = 100_000;
 
 type ActivityType = 'qa' | 'file';
-export type Question = { id: string; prompt: string };
+// Per-question points live in the questions jsonb so admins can weight each
+// question independently; the top-level activities.points column is only
+// used for file-type activities.
+export type Question = {
+  id: string;
+  prompt: string;
+  answerKey: string;
+  points: number;
+};
 
 function isActivityType(v: unknown): v is ActivityType {
   return v === 'qa' || v === 'file';
@@ -54,15 +64,36 @@ function parseQuestions(raw: unknown): Question[] | 'invalid' {
     if (!item || typeof item !== 'object') return 'invalid';
     const prompt = (item as { prompt?: unknown }).prompt;
     const id = (item as { id?: unknown }).id;
+    const answerKey = (item as { answerKey?: unknown }).answerKey;
+    const points = (item as { points?: unknown }).points;
     if (typeof prompt !== 'string') return 'invalid';
     const trimmed = prompt.trim();
     if (!trimmed || trimmed.length > MAX_PROMPT) return 'invalid';
+    const answerKeyStr =
+      typeof answerKey === 'string' ? answerKey.trim() : '';
+    if (answerKeyStr.length > MAX_ANSWER_KEY) return 'invalid';
+    const pointsNum =
+      typeof points === 'number' && Number.isFinite(points) ? points : 1;
+    if (pointsNum < 0 || pointsNum > MAX_POINTS || !Number.isInteger(pointsNum)) {
+      return 'invalid';
+    }
     out.push({
       id: typeof id === 'string' && id.length ? id : crypto.randomUUID(),
       prompt: trimmed,
+      answerKey: answerKeyStr,
+      points: pointsNum,
     });
   }
   return out;
+}
+
+function parsePoints(raw: unknown): number | 'invalid' {
+  if (raw === null || raw === undefined || raw === '') return 0;
+  const n = typeof raw === 'number' ? raw : Number(raw);
+  if (!Number.isFinite(n)) return 'invalid';
+  if (!Number.isInteger(n)) return 'invalid';
+  if (n < 0 || n > MAX_POINTS) return 'invalid';
+  return n;
 }
 
 function parseGroupIds(raw: unknown): string[] | 'invalid' {
@@ -116,6 +147,7 @@ export async function createActivity(
   }
 
   let questions: Question[] | null = null;
+  let points = 0;
   if (rawType === 'qa') {
     const parsed = parseQuestions(formData.get('questions'));
     if (parsed === 'invalid') {
@@ -125,6 +157,15 @@ export async function createActivity(
       return { ok: false, error: 'Add at least one question' };
     }
     questions = parsed;
+    // For QA the activities.points column is the sum of per-question
+    // points — convenient for leaderboard "X / Y" displays.
+    points = parsed.reduce((sum, q) => sum + q.points, 0);
+  } else {
+    const parsed = parsePoints(formData.get('points'));
+    if (parsed === 'invalid') {
+      return { ok: false, error: 'Points must be a whole number 0+' };
+    }
+    points = parsed;
   }
 
   const groupIds = parseGroupIds(formData.get('group_ids'));
@@ -140,6 +181,7 @@ export async function createActivity(
       description,
       type: rawType,
       questions,
+      points,
       created_by: auth.userId,
     })
     .select('id')
@@ -207,6 +249,7 @@ export async function updateActivity(
   }
 
   let questions: Question[] | null = null;
+  let points = 0;
   if (existing.type === 'qa') {
     const parsed = parseQuestions(formData.get('questions'));
     if (parsed === 'invalid') {
@@ -216,11 +259,18 @@ export async function updateActivity(
       return { ok: false, error: 'Add at least one question' };
     }
     questions = parsed;
+    points = parsed.reduce((sum, q) => sum + q.points, 0);
+  } else {
+    const parsed = parsePoints(formData.get('points'));
+    if (parsed === 'invalid') {
+      return { ok: false, error: 'Points must be a whole number 0+' };
+    }
+    points = parsed;
   }
 
   const { error: updateError } = await supabase
     .from('activities')
-    .update({ title, description, questions })
+    .update({ title, description, questions, points })
     .eq('id', id);
   if (updateError) {
     console.error('[admin/activities] updateActivity failed', updateError);
@@ -284,6 +334,7 @@ export async function setActivityGroups(
 export async function setSubmissionReviewed(
   submissionId: string,
   reviewed: boolean,
+  awardedPoints?: number,
 ): Promise<ActionResult> {
   const auth = await requireAdmin();
   if (!auth.ok) return auth;
@@ -292,12 +343,53 @@ export async function setSubmissionReviewed(
   }
 
   const supabase = createAdminClient();
+  // Look up the submission to find its activity type + max possible points.
+  // File-type reviews need an admin-chosen awardedPoints; QA keeps whatever
+  // was auto-scored at submission time.
+  const { data: subRow, error: subErr } = await supabase
+    .from('submissions')
+    .select('activity_id, activities(type, points)')
+    .eq('id', submissionId)
+    .maybeSingle();
+  if (subErr || !subRow) {
+    console.error('[admin/activities] setSubmissionReviewed lookup failed', subErr);
+    return { ok: false, error: 'Submission not found' };
+  }
+  const activityRaw = subRow.activities as unknown;
+  const activity = Array.isArray(activityRaw)
+    ? (activityRaw[0] as { type: string; points: number } | undefined) ?? null
+    : (activityRaw as { type: string; points: number } | null);
+  if (!activity) {
+    return { ok: false, error: 'Submission activity missing' };
+  }
+
+  const update: Record<string, unknown> = {
+    status: reviewed ? 'reviewed' : 'submitted',
+    reviewed_at: reviewed ? new Date().toISOString() : null,
+  };
+
+  if (activity.type === 'file') {
+    if (reviewed) {
+      // Admin may pass any value from 0 to the activity's max.
+      let pts = typeof awardedPoints === 'number' ? awardedPoints : activity.points;
+      if (!Number.isFinite(pts) || !Number.isInteger(pts)) {
+        return { ok: false, error: 'Points must be a whole number' };
+      }
+      if (pts < 0) pts = 0;
+      if (pts > activity.points) pts = activity.points;
+      update.awarded_points = pts;
+    } else {
+      // Reopening a file submission clears any awarded points.
+      update.awarded_points = 0;
+    }
+  }
+  // For QA: awarded_points was set at submit time and stays as-is through
+  // reviewing. Reopening a QA submission doesn't change points either —
+  // the trainee can only earn new points by resubmitting new answers.
+
   const { data: updated, error } = await supabase
     .from('submissions')
-    .update({
-      status: reviewed ? 'reviewed' : 'submitted',
-      reviewed_at: reviewed ? new Date().toISOString() : null,
-    })
+    .update(update)
     .eq('id', submissionId)
     .select('activity_id')
     .single();
@@ -309,6 +401,8 @@ export async function setSubmissionReviewed(
 
   revalidatePath(`/admin/activities/${updated.activity_id}`);
   revalidatePath('/admin/trainees');
+  revalidatePath('/leaderboard');
+  revalidatePath('/dashboard');
   return { ok: true };
 }
 

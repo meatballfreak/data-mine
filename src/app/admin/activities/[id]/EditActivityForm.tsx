@@ -19,6 +19,7 @@ type ActivityDetail = {
   description: string | null;
   type: 'qa' | 'file';
   questions: Question[];
+  points: number;
   assignedGroupIds: string[];
 };
 
@@ -117,7 +118,26 @@ export default function EditActivityForm({
               />
             </Field>
           </Card>
-        ) : null}
+        ) : (
+          <Card>
+            <Field
+              label="Points"
+              hint="Max points admins can award on review"
+            >
+              <input
+                name="points"
+                type="number"
+                min={0}
+                max={100000}
+                step={1}
+                defaultValue={activity.points}
+                required
+                disabled={anyPending}
+                className="w-32 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none disabled:opacity-50"
+              />
+            </Field>
+          </Card>
+        )}
 
         {error ? <p className="text-sm text-red-400">{error}</p> : null}
 

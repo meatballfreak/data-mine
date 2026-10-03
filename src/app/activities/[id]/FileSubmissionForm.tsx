@@ -27,9 +27,11 @@ function formatWhen(iso: string): string {
 export default function FileSubmissionForm({
   activityId,
   existing,
+  locked,
 }: {
   activityId: string;
   existing: FileSubmission | null;
+  locked: boolean;
 }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -90,10 +92,16 @@ export default function FileSubmissionForm({
             </a>
           </p>
           <p className="text-xs text-slate-500">
-            Uploaded {formatWhen(existing.submittedAt)}. Pick another file
-            below to replace it.
+            Uploaded {formatWhen(existing.submittedAt)}.
+            {locked
+              ? ' Locked by your admin — ask them to reopen if you need to replace it.'
+              : ' Pick another file below to replace it.'}
           </p>
         </div>
+      ) : locked ? (
+        <p className="text-sm text-amber-300">
+          Submission locked by your admin.
+        </p>
       ) : (
         <p className="text-sm text-slate-300">
           Choose a file (max 4 MB). It uploads to the admin&apos;s Google
@@ -101,30 +109,38 @@ export default function FileSubmissionForm({
         </p>
       )}
 
-      <input
-        ref={inputRef}
-        type="file"
-        onChange={handlePick}
-        disabled={pending}
-        className="block w-full text-sm text-slate-300 file:mr-3 file:rounded-md file:border-0 file:bg-slate-800 file:px-3 file:py-2 file:text-sm file:text-slate-100 hover:file:bg-slate-700 disabled:opacity-50"
-      />
+      {locked ? (
+        <span className="inline-block rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-300">
+          Locked by admin
+        </span>
+      ) : (
+        <>
+          <input
+            ref={inputRef}
+            type="file"
+            onChange={handlePick}
+            disabled={pending}
+            className="block w-full text-sm text-slate-300 file:mr-3 file:rounded-md file:border-0 file:bg-slate-800 file:px-3 file:py-2 file:text-sm file:text-slate-100 hover:file:bg-slate-700 disabled:opacity-50"
+          />
 
-      {error ? <p className="text-sm text-red-400">{error}</p> : null}
-      {status ? <p className="text-sm text-emerald-400">{status}</p> : null}
+          {error ? <p className="text-sm text-red-400">{error}</p> : null}
+          {status ? <p className="text-sm text-emerald-400">{status}</p> : null}
 
-      <div>
-        <Button
-          type="button"
-          onClick={handleSubmit}
-          disabled={pending || !picked}
-        >
-          {pending
-            ? 'Uploading…'
-            : existing?.fileUrl
-              ? 'Replace file'
-              : 'Upload'}
-        </Button>
-      </div>
+          <div>
+            <Button
+              type="button"
+              onClick={handleSubmit}
+              disabled={pending || !picked}
+            >
+              {pending
+                ? 'Uploading…'
+                : existing?.fileUrl
+                  ? 'Replace file'
+                  : 'Upload'}
+            </Button>
+          </div>
+        </>
+      )}
     </Card>
   );
 }

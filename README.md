@@ -6,7 +6,7 @@ Hosted at: https://data-mine-eight.vercel.app
 
 ## Status
 
-Phase 7 of 9 complete. Delivered so far: Google OAuth (Supabase), role-gated admin/trainee dashboards, dark UI shell, core schema + RLS, admin group CRUD, QR-based trainee onboarding, admin activity CRUD, trainee Q&A submissions, admin submission review, trainees roster, and Google Drive uploads: admin connects a Google account on `/admin/drive` (OAuth with `drive.file` scope, refresh token AES-256-GCM encrypted at rest), file-type activities render a 4 MB file picker for trainees, uploads stream through the server into a per-activity subfolder under `Workshop Submissions` in the admin's Drive, and admin review surfaces each submission as a link out to the Drive file.
+Phase 8 of 9 complete. Delivered so far: everything through Phase 7 (Drive uploads), plus a points + leaderboard system. Admins set per-question answer keys and points on Q&A activities (case-sensitive matching, whitespace-trimmed, auto-scored at submit) and a max-points value on file activities (admins pick 0–max at review time). Reviewed submissions lock on the trainee side — no further edits or re-uploads until the admin reopens. `/leaderboard` shows per-group rankings aggregated server-side (visible to trainees for their own groups, to admins for every group).
 
 ## Deploy setup (hosted on Vercel)
 

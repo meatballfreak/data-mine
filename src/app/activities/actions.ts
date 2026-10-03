@@ -14,7 +14,45 @@ const MAX_FILE_BYTES = 4 * 1024 * 1024;
 
 const MAX_ANSWER = 10_000;
 
-type Question = { id: string; prompt: string };
+type Question = {
+  id: string;
+  prompt: string;
+  answerKey?: string;
+  points?: number;
+};
+
+async function fetchExistingStatus(
+  activityId: string,
+  userId: string,
+): Promise<'submitted' | 'reviewed' | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('submissions')
+    .select('status')
+    .eq('activity_id', activityId)
+    .eq('profile_id', userId)
+    .maybeSingle();
+  if (error) {
+    console.error('[activities] fetchExistingStatus failed', error);
+    return null;
+  }
+  return (data?.status as 'submitted' | 'reviewed' | null) ?? null;
+}
+
+function scoreQaSubmission(
+  questions: Question[],
+  answers: Record<string, string>,
+): number {
+  let total = 0;
+  for (const q of questions) {
+    const key = (q.answerKey ?? '').trim();
+    if (!key) continue; // no key configured → cannot auto-score
+    const given = (answers[q.id] ?? '').trim();
+    const pts = typeof q.points === 'number' ? q.points : 1;
+    if (given === key) total += pts;
+  }
+  return total;
+}
 
 // Expected shape of a Q&A submission answer map: { [questionId]: text }.
 // The DB stores it as a JSON object so admins can render answers per
@@ -50,6 +88,16 @@ export async function submitAnswers(
   if (!user) return { ok: false, error: 'Not signed in' };
   if (typeof activityId !== 'string' || !activityId.length) {
     return { ok: false, error: 'Invalid activity' };
+  }
+
+  // Lock check — once an admin reviews a submission, the trainee can't
+  // overwrite it. Admin must unmark (reopen) first.
+  const existingStatus = await fetchExistingStatus(activityId, user.id);
+  if (existingStatus === 'reviewed') {
+    return {
+      ok: false,
+      error: 'This submission is locked by your admin. Ask them to reopen it.',
+    };
   }
 
   // Use the user-scoped client so RLS enforces that only assigned trainees
@@ -91,6 +139,8 @@ export async function submitAnswers(
     }
   }
 
+  const awardedPoints = scoreQaSubmission(questions, answers);
+
   const { error: upsertError } = await supabase
     .from('submissions')
     .upsert(
@@ -98,6 +148,7 @@ export async function submitAnswers(
         activity_id: activityId,
         profile_id: user.id,
         answers,
+        awarded_points: awardedPoints,
         status: 'submitted',
       },
       { onConflict: 'activity_id,profile_id' },
@@ -110,6 +161,7 @@ export async function submitAnswers(
 
   revalidatePath(`/activities/${activityId}`);
   revalidatePath('/dashboard');
+  revalidatePath('/leaderboard');
   return { ok: true };
 }
 
@@ -128,6 +180,14 @@ export async function submitFile(
   if (!user) return { ok: false, error: 'Not signed in' };
   if (typeof activityId !== 'string' || !activityId.length) {
     return { ok: false, error: 'Invalid activity' };
+  }
+
+  const existingStatus = await fetchExistingStatus(activityId, user.id);
+  if (existingStatus === 'reviewed') {
+    return {
+      ok: false,
+      error: 'This submission is locked by your admin. Ask them to reopen it.',
+    };
   }
 
   const supabase = await createClient();
@@ -200,5 +260,6 @@ export async function submitFile(
 
   revalidatePath(`/activities/${activityId}`);
   revalidatePath('/dashboard');
+  revalidatePath('/leaderboard');
   return { ok: true };
 }

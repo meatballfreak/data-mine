@@ -12,18 +12,19 @@ type Props = {
   activityId: string;
   questions: Question[];
   initialAnswers: Record<string, string> | null;
+  locked: boolean;
 };
 
 export default function ActivityForm({
   activityId,
   questions,
   initialAnswers,
+  locked,
 }: Props) {
   const router = useRouter();
   const alreadySubmitted = initialAnswers !== null;
-  // When the trainee has submitted, start in read-only mode. The Edit button
-  // flips us back into editable without losing their previous answers.
-  const [editing, setEditing] = useState(!alreadySubmitted);
+  // When the trainee has submitted (or the admin has locked), start read-only.
+  const [editing, setEditing] = useState(!alreadySubmitted && !locked);
   const [answers, setAnswers] = useState<Record<string, string>>(
     () => initialAnswers ?? {},
   );
@@ -122,6 +123,10 @@ export default function ActivityForm({
               </Button>
             ) : null}
           </>
+        ) : locked ? (
+          <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-300">
+            Locked by admin
+          </span>
         ) : (
           <>
             <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-300">

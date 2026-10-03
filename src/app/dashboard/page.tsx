@@ -12,7 +12,9 @@ type MyActivity = {
   id: string;
   title: string;
   type: 'qa' | 'file';
-  submitted: boolean;
+  maxPoints: number;
+  earnedPoints: number;
+  status: 'none' | 'submitted' | 'reviewed';
 };
 
 async function fetchMyGroups(): Promise<MyGroup[]> {
@@ -40,24 +42,40 @@ async function fetchMyActivities(userId: string): Promise<MyActivity[]> {
     await Promise.all([
       supabase
         .from('activities')
-        .select('id, title, type, created_at')
+        .select('id, title, type, points, created_at')
         .order('created_at', { ascending: false }),
       supabase
         .from('submissions')
-        .select('activity_id')
+        .select('activity_id, awarded_points, status')
         .eq('profile_id', userId),
     ]);
 
   if (aErr) console.error('[dashboard] fetchMyActivities failed', aErr);
   if (sErr) console.error('[dashboard] fetchMySubmissions failed', sErr);
 
-  const submittedIds = new Set((subs ?? []).map((r) => r.activity_id as string));
-  return (activities ?? []).map((row) => ({
-    id: row.id as string,
-    title: row.title as string,
-    type: row.type as 'qa' | 'file',
-    submitted: submittedIds.has(row.id as string),
-  }));
+  const subByActivity = new Map<
+    string,
+    { awardedPoints: number; status: 'submitted' | 'reviewed' }
+  >();
+  for (const row of subs ?? []) {
+    subByActivity.set(row.activity_id as string, {
+      awardedPoints: (row.awarded_points as number | null) ?? 0,
+      status: (row.status as 'submitted' | 'reviewed') ?? 'submitted',
+    });
+  }
+
+  return (activities ?? []).map((row) => {
+    const id = row.id as string;
+    const sub = subByActivity.get(id);
+    return {
+      id,
+      title: row.title as string,
+      type: row.type as 'qa' | 'file',
+      maxPoints: (row.points as number | null) ?? 0,
+      earnedPoints: sub?.awardedPoints ?? 0,
+      status: sub ? sub.status : 'none',
+    };
+  });
 }
 
 function joinErrorMessage(code: string | undefined): string | null {
@@ -92,13 +110,21 @@ export default async function DashboardPage({
 
   return (
     <section className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-semibold text-white sm:text-3xl">
-          Trainee Dashboard
-        </h1>
-        <p className="text-slate-400">
-          Your groups and assigned activities.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold text-white sm:text-3xl">
+            Trainee Dashboard
+          </h1>
+          <p className="text-slate-400">
+            Your groups and assigned activities.
+          </p>
+        </div>
+        <Link
+          href="/leaderboard"
+          className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800"
+        >
+          Leaderboard
+        </Link>
       </div>
 
       {justJoined ? (
@@ -141,9 +167,12 @@ export default async function DashboardPage({
                           <span className="uppercase tracking-wide">
                             {activity.type === 'qa' ? 'Q&A' : 'File upload'}
                           </span>
+                          {' · '}
+                          {activity.earnedPoints} / {activity.maxPoints}{' '}
+                          {activity.maxPoints === 1 ? 'pt' : 'pts'}
                         </p>
                       </div>
-                      <StatusBadge submitted={activity.submitted} />
+                      <StatusBadge status={activity.status} />
                     </div>
                   </Card>
                 </Link>
@@ -182,12 +211,26 @@ export default async function DashboardPage({
   );
 }
 
-function StatusBadge({ submitted }: { submitted: boolean }) {
-  return submitted ? (
-    <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-300">
-      Submitted
-    </span>
-  ) : (
+function StatusBadge({
+  status,
+}: {
+  status: 'none' | 'submitted' | 'reviewed';
+}) {
+  if (status === 'reviewed') {
+    return (
+      <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-300">
+        Reviewed
+      </span>
+    );
+  }
+  if (status === 'submitted') {
+    return (
+      <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-300">
+        Submitted
+      </span>
+    );
+  }
+  return (
     <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-300">
       Not started
     </span>
