@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { getCurrentUser } from '@/lib/auth';
@@ -7,10 +8,15 @@ type SearchParams = Promise<{ joined?: string; joinError?: string }>;
 
 type MyGroup = { id: string; name: string };
 
+type MyActivity = {
+  id: string;
+  title: string;
+  type: 'qa' | 'file';
+  submitted: boolean;
+};
+
 async function fetchMyGroups(): Promise<MyGroup[]> {
   const supabase = await createClient();
-  // RLS limits group_members rows to the current user; groups is readable
-  // to any authenticated user, so this join returns only groups I belong to.
   const { data, error } = await supabase
     .from('group_members')
     .select('groups(id, name)')
@@ -24,6 +30,34 @@ async function fetchMyGroups(): Promise<MyGroup[]> {
   return (data ?? [])
     .map((row) => row.groups as unknown as MyGroup | null)
     .filter((g): g is MyGroup => !!g);
+}
+
+async function fetchMyActivities(userId: string): Promise<MyActivity[]> {
+  const supabase = await createClient();
+  // RLS (activities_select_assigned) already filters to activities whose
+  // groups overlap with the trainee's memberships.
+  const [{ data: activities, error: aErr }, { data: subs, error: sErr }] =
+    await Promise.all([
+      supabase
+        .from('activities')
+        .select('id, title, type, created_at')
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('submissions')
+        .select('activity_id')
+        .eq('profile_id', userId),
+    ]);
+
+  if (aErr) console.error('[dashboard] fetchMyActivities failed', aErr);
+  if (sErr) console.error('[dashboard] fetchMySubmissions failed', sErr);
+
+  const submittedIds = new Set((subs ?? []).map((r) => r.activity_id as string));
+  return (activities ?? []).map((row) => ({
+    id: row.id as string,
+    title: row.title as string,
+    type: row.type as 'qa' | 'file',
+    submitted: submittedIds.has(row.id as string),
+  }));
 }
 
 function joinErrorMessage(code: string | undefined): string | null {
@@ -46,7 +80,11 @@ export default async function DashboardPage({
   const { user } = await getCurrentUser();
   if (!user) redirect('/login');
 
-  const [groups, params] = await Promise.all([fetchMyGroups(), searchParams]);
+  const [groups, activities, params] = await Promise.all([
+    fetchMyGroups(),
+    fetchMyActivities(user.id),
+    searchParams,
+  ]);
   const justJoined = params.joined
     ? groups.find((g) => g.id === params.joined) ?? null
     : null;
@@ -59,7 +97,7 @@ export default async function DashboardPage({
           Trainee Dashboard
         </h1>
         <p className="text-slate-400">
-          Your assigned activities will appear here.
+          Your groups and assigned activities.
         </p>
       </div>
 
@@ -76,6 +114,44 @@ export default async function DashboardPage({
           <p className="text-sm text-red-200">{errorMessage}</p>
         </Card>
       ) : null}
+
+      <div className="space-y-2">
+        <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
+          Activities
+        </h2>
+        {activities.length === 0 ? (
+          <Card>
+            <p className="text-slate-400">
+              No activities assigned yet. Once your admin assigns one to a
+              group you&apos;re in, it will show up here.
+            </p>
+          </Card>
+        ) : (
+          <ul className="space-y-2">
+            {activities.map((activity) => (
+              <li key={activity.id}>
+                <Link href={`/activities/${activity.id}`} className="block">
+                  <Card className="transition-colors hover:border-slate-700">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-base font-medium text-white">
+                          {activity.title}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          <span className="uppercase tracking-wide">
+                            {activity.type === 'qa' ? 'Q&A' : 'File upload'}
+                          </span>
+                        </p>
+                      </div>
+                      <StatusBadge submitted={activity.submitted} />
+                    </div>
+                  </Card>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       <div className="space-y-2">
         <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
@@ -103,5 +179,17 @@ export default async function DashboardPage({
         )}
       </div>
     </section>
+  );
+}
+
+function StatusBadge({ submitted }: { submitted: boolean }) {
+  return submitted ? (
+    <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-300">
+      Submitted
+    </span>
+  ) : (
+    <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-300">
+      Not started
+    </span>
   );
 }
