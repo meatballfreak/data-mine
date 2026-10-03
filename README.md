@@ -6,7 +6,7 @@ Hosted at: https://data-mine-eight.vercel.app
 
 ## Status
 
-Phase 8 of 9 complete. Delivered so far: everything through Phase 7 (Drive uploads), plus a points + leaderboard system. Admins set per-question answer keys and points on Q&A activities (case-sensitive matching, whitespace-trimmed, auto-scored at submit) and a max-points value on file activities (admins pick 0–max at review time). Reviewed submissions lock on the trainee side — no further edits or re-uploads until the admin reopens. `/leaderboard` shows per-group rankings aggregated server-side (visible to trainees for their own groups, to admins for every group).
+Phase 9 of 9 complete. Delivered so far: everything through Phase 8 (points, submission locking, leaderboards), plus an email-domain allowlist for group joins. Setting `JOIN_ALLOWED_DOMAINS=neu.edu.ph` (comma-separated) restricts who can join groups via `/join/<token>`; mismatched emails are bounced to `/dashboard?joinError=domain` with a message explaining the restriction. The gate only runs at the join step, so admin accounts on other domains keep working as usual.
 
 ## Deploy setup (hosted on Vercel)
 
@@ -79,6 +79,7 @@ Add `http://localhost:3000/**` to Supabase → Auth → URL Configuration → Re
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | yes | Public `anon` key used by browser and server clients. |
 | `SUPABASE_SERVICE_ROLE_KEY` | Phase 2+ | Server-only key for admin operations. Not read in Phase 1. |
 | `ADMIN_EMAILS` | yes | Comma-separated admin emails, case-insensitive. Matching users are routed to `/admin`. |
+| `JOIN_ALLOWED_DOMAINS` | no | Comma-separated email domains allowed to join groups via `/join/<token>` (e.g. `neu.edu.ph`). Empty/unset = anyone-can-join. Does not affect account creation; only blocks the join step. |
 
 ## Scripts
 

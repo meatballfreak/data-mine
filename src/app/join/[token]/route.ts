@@ -1,5 +1,9 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getCurrentUser } from '@/lib/auth';
+import {
+  emailMatchesAllowedDomain,
+  parseAllowedDomains,
+} from '@/lib/emailDomains';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 // Loose shape — a token is just a URL-safe string. We cap the length to avoid
@@ -23,6 +27,14 @@ export async function GET(
     return NextResponse.redirect(
       `${origin}/login?next=${encodeURIComponent(next)}`,
     );
+  }
+
+  // Workshop-scoped domain allowlist. Set JOIN_ALLOWED_DOMAINS to a
+  // comma-separated list (e.g. "neu.edu.ph") to restrict who can join
+  // groups. Unset = anyone-can-join (preserves pre-Phase-9 behavior).
+  const allowed = parseAllowedDomains(process.env.JOIN_ALLOWED_DOMAINS);
+  if (!emailMatchesAllowedDomain(user.email, allowed)) {
+    return NextResponse.redirect(`${origin}/dashboard?joinError=domain`);
   }
 
   const supabase = createAdminClient();

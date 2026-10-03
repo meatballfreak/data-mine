@@ -85,6 +85,16 @@ function joinErrorMessage(code: string | undefined): string | null {
     case 'lookup':
     case 'insert':
       return 'Something went wrong joining that group. Try again or ask your admin.';
+    case 'domain': {
+      const allowed = (process.env.JOIN_ALLOWED_DOMAINS ?? '')
+        .split(',')
+        .map((d) => d.trim())
+        .filter(Boolean);
+      const list = allowed.length
+        ? allowed.map((d) => `@${d}`).join(', ')
+        : 'the workshop allowlist';
+      return `Your email isn't on this workshop's allowlist. Sign in with a ${list} account to join.`;
+    }
     default:
       return null;
   }
