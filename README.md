@@ -6,7 +6,7 @@ Hosted at: https://data-mine-eight.vercel.app
 
 ## Status
 
-Phase 2 of 9 complete. Delivered so far: Google OAuth (Supabase), role-gated admin/trainee dashboards, dark UI shell, core schema + RLS, admin group CRUD. QR registration, activities, Drive uploads land in Phases 3–7.
+Phase 3 of 9 complete. Delivered so far: Google OAuth (Supabase), role-gated admin/trainee dashboards, dark UI shell, core schema + RLS, admin group CRUD, and QR-based trainee onboarding (per-group QR codes, `/join/<token>` flow, sign-in redirect preservation, trainee dashboard shows joined groups). Activities and Drive uploads land in Phases 4–7.
 
 ## Deploy setup (hosted on Vercel)
 
@@ -26,7 +26,7 @@ supabase link --project-ref <your-project-ref>
 supabase db push
 ```
 
-Or paste `supabase/migrations/0001_init.sql` into the Supabase **SQL Editor** and run. Migration is idempotent.
+Or paste the files in `supabase/migrations/` into the Supabase **SQL Editor** in order (`0001_init.sql`, `0002_qr_join.sql`, …). All migrations are idempotent.
 
 ### 3. Wire Google OAuth
 

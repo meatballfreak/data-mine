@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/Button';
 
-export default function LoginForm() {
+export default function LoginForm({ next }: { next: string | null }) {
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
 
@@ -13,10 +13,12 @@ export default function LoginForm() {
     setFailed(false);
     try {
       const supabase = createClient();
+      const callback = new URL('/auth/callback', window.location.origin);
+      if (next) callback.searchParams.set('next', next);
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: callback.toString(),
         },
       });
       if (error) {

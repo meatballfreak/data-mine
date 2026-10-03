@@ -75,6 +75,61 @@ create index if not exists idx_submissions_activity
   on public.submissions(activity_id);
 
 ------------------------------------------------------------------------------
+-- Column repair for pre-existing tables
+--   `create table if not exists` is a no-op on an existing table, so missing
+--   nullable columns on a stale draft table (e.g. an older `groups` created
+--   before `created_by` was added) must be patched explicitly here.
+------------------------------------------------------------------------------
+
+alter table public.profiles
+  add column if not exists username  text,
+  add column if not exists full_name text;
+
+alter table public.groups
+  add column if not exists created_by uuid references public.profiles(id) on delete set null;
+
+alter table public.activities
+  add column if not exists description text,
+  add column if not exists questions   jsonb,
+  add column if not exists created_by  uuid references public.profiles(id) on delete set null;
+
+alter table public.submissions
+  add column if not exists answers     jsonb,
+  add column if not exists file_url    text,
+  add column if not exists reviewed_at timestamptz;
+
+------------------------------------------------------------------------------
+-- Role privileges
+--   Supabase sets these on a stock project, but a `drop schema public cascade`
+--   wipes them. Reassert so service_role / anon / authenticated can reach the
+--   tables; RLS (below) is still what gates row-level access.
+------------------------------------------------------------------------------
+
+grant usage on schema public to anon, authenticated, service_role;
+
+grant all on all tables     in schema public to postgres, service_role;
+grant all on all sequences  in schema public to postgres, service_role;
+grant all on all functions  in schema public to postgres, service_role;
+
+grant select, insert, update, delete on all tables    in schema public to anon, authenticated;
+grant usage, select                  on all sequences in schema public to anon, authenticated;
+grant execute                        on all functions in schema public to anon, authenticated;
+
+alter default privileges in schema public
+  grant all on tables    to postgres, service_role;
+alter default privileges in schema public
+  grant all on sequences to postgres, service_role;
+alter default privileges in schema public
+  grant all on functions to postgres, service_role;
+
+alter default privileges in schema public
+  grant select, insert, update, delete on tables    to anon, authenticated;
+alter default privileges in schema public
+  grant usage, select                  on sequences to anon, authenticated;
+alter default privileges in schema public
+  grant execute                        on functions to anon, authenticated;
+
+------------------------------------------------------------------------------
 -- Auto-provision profile on new auth.users insert
 ------------------------------------------------------------------------------
 
@@ -103,6 +158,19 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
+
+-- Backfill: any auth.users rows that pre-date this trigger (users who signed
+-- in before the trigger existed, or whose profile row was wiped by a reset)
+-- need a profile stub, otherwise FKs like groups.created_by will reject them.
+insert into public.profiles (id, full_name)
+select
+  u.id,
+  coalesce(
+    u.raw_user_meta_data->>'full_name',
+    u.raw_user_meta_data->>'name'
+  )
+from auth.users u
+on conflict (id) do nothing;
 
 ------------------------------------------------------------------------------
 -- Row-Level Security
