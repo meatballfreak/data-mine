@@ -10,12 +10,15 @@ export type SubmissionRow = {
   profileId: string;
   fullName: string | null;
   answers: Record<string, string>;
+  fileName: string | null;
+  fileUrl: string | null;
   status: 'submitted' | 'reviewed';
   createdAt: string;
   reviewedAt: string | null;
 };
 
 type Props = {
+  activityType: 'qa' | 'file';
   questions: Question[];
   submissions: SubmissionRow[];
 };
@@ -30,7 +33,11 @@ function formatWhen(iso: string): string {
   });
 }
 
-export default function SubmissionsList({ questions, submissions }: Props) {
+export default function SubmissionsList({
+  activityType,
+  questions,
+  submissions,
+}: Props) {
   if (submissions.length === 0) {
     return (
       <Card>
@@ -46,7 +53,11 @@ export default function SubmissionsList({ questions, submissions }: Props) {
     <ul className="space-y-2">
       {submissions.map((submission) => (
         <li key={submission.id}>
-          <SubmissionCard submission={submission} questions={questions} />
+          <SubmissionCard
+            submission={submission}
+            questions={questions}
+            activityType={activityType}
+          />
         </li>
       ))}
     </ul>
@@ -56,9 +67,11 @@ export default function SubmissionsList({ questions, submissions }: Props) {
 function SubmissionCard({
   submission,
   questions,
+  activityType,
 }: {
   submission: SubmissionRow;
   questions: Question[];
+  activityType: 'qa' | 'file';
 }) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +87,7 @@ function SubmissionCard({
   }
 
   const displayName = submission.fullName ?? 'Unnamed trainee';
+  const detailLabel = activityType === 'file' ? 'file' : 'answers';
 
   return (
     <Card className="space-y-2">
@@ -106,7 +120,7 @@ function SubmissionCard({
             variant="secondary"
             onClick={() => setOpen((v) => !v)}
           >
-            {open ? 'Hide answers' : 'Show answers'}
+            {open ? `Hide ${detailLabel}` : `Show ${detailLabel}`}
           </Button>
         </div>
       </div>
@@ -114,27 +128,46 @@ function SubmissionCard({
       {error ? <p className="text-sm text-red-400">{error}</p> : null}
 
       {open ? (
-        <ol className="space-y-2 pt-2">
-          {questions.map((q, i) => {
-            const answer = submission.answers[q.id] ?? '';
-            return (
-              <li
-                key={q.id}
-                className="rounded-md border border-slate-800 bg-slate-950 p-3"
+        activityType === 'file' ? (
+          <div className="rounded-md border border-slate-800 bg-slate-950 p-3">
+            {submission.fileUrl ? (
+              <a
+                href={submission.fileUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-sm text-emerald-300 underline hover:text-emerald-200"
               >
-                <p className="text-xs uppercase tracking-wide text-slate-500">
-                  Question {i + 1}
-                </p>
-                <p className="text-sm text-slate-200">{q.prompt}</p>
-                <p className="mt-2 whitespace-pre-wrap text-sm text-slate-100">
-                  {answer || (
-                    <span className="text-slate-500">(no answer)</span>
-                  )}
-                </p>
-              </li>
-            );
-          })}
-        </ol>
+                {submission.fileName ?? 'Open file in Drive'}
+              </a>
+            ) : (
+              <p className="text-sm text-slate-500">
+                No file recorded on this submission.
+              </p>
+            )}
+          </div>
+        ) : (
+          <ol className="space-y-2 pt-2">
+            {questions.map((q, i) => {
+              const answer = submission.answers[q.id] ?? '';
+              return (
+                <li
+                  key={q.id}
+                  className="rounded-md border border-slate-800 bg-slate-950 p-3"
+                >
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    Question {i + 1}
+                  </p>
+                  <p className="text-sm text-slate-200">{q.prompt}</p>
+                  <p className="mt-2 whitespace-pre-wrap text-sm text-slate-100">
+                    {answer || (
+                      <span className="text-slate-500">(no answer)</span>
+                    )}
+                  </p>
+                </li>
+              );
+            })}
+          </ol>
+        )
       ) : null}
     </Card>
   );

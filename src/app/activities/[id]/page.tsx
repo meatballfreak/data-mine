@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/Card';
 import { getCurrentUser } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import ActivityForm, { type Question } from './ActivityForm';
+import FileSubmissionForm, { type FileSubmission } from './FileSubmissionForm';
 
 type ActivityDetail = {
   id: string;
@@ -44,29 +45,44 @@ async function fetchActivity(id: string): Promise<ActivityDetail | null> {
 async function fetchMySubmission(
   activityId: string,
   userId: string,
-): Promise<Record<string, string> | null> {
+): Promise<{
+  answers: Record<string, string> | null;
+  file: FileSubmission | null;
+}> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('submissions')
-    .select('answers')
+    .select('answers, file_name, file_url, created_at')
     .eq('activity_id', activityId)
     .eq('profile_id', userId)
     .maybeSingle();
 
   if (error) {
     console.error('[activities/:id] submission fetch failed', error);
-    return null;
+    return { answers: null, file: null };
   }
-  if (!data) return null;
-  const answers = data.answers;
-  if (!answers || typeof answers !== 'object' || Array.isArray(answers)) {
-    return null;
+  if (!data) return { answers: null, file: null };
+
+  let answers: Record<string, string> | null = null;
+  const rawAnswers = data.answers;
+  if (rawAnswers && typeof rawAnswers === 'object' && !Array.isArray(rawAnswers)) {
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(rawAnswers)) {
+      if (typeof v === 'string') out[k] = v;
+    }
+    answers = Object.keys(out).length ? out : null;
   }
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(answers)) {
-    if (typeof v === 'string') out[k] = v;
-  }
-  return out;
+
+  const file =
+    data.file_url || data.file_name
+      ? {
+          fileName: (data.file_name as string | null) ?? null,
+          fileUrl: (data.file_url as string | null) ?? null,
+          submittedAt: data.created_at as string,
+        }
+      : null;
+
+  return { answers, file };
 }
 
 export default async function TraineeActivityPage({
@@ -81,7 +97,8 @@ export default async function TraineeActivityPage({
   const activity = await fetchActivity(id);
   if (!activity) notFound();
 
-  const existingAnswers = await fetchMySubmission(activity.id, user.id);
+  const { answers: existingAnswers, file: existingFile } =
+    await fetchMySubmission(activity.id, user.id);
 
   return (
     <section className="space-y-5">
@@ -109,11 +126,7 @@ export default async function TraineeActivityPage({
       ) : null}
 
       {activity.type === 'file' ? (
-        <Card>
-          <p className="text-sm text-slate-400">
-            File-upload activities land in a later phase. Check back soon.
-          </p>
-        </Card>
+        <FileSubmissionForm activityId={activity.id} existing={existingFile} />
       ) : (
         <ActivityForm
           activityId={activity.id}

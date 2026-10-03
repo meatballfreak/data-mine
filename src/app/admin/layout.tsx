@@ -8,6 +8,7 @@ const tabs = [
   { href: '/admin/activities', label: 'Activities' },
   { href: '/admin/trainees', label: 'Trainees' },
   { href: '/admin/qr-codes', label: 'QR Codes' },
+  { href: '/admin/drive', label: 'Drive' },
 ] as const;
 
 export default async function AdminLayout({

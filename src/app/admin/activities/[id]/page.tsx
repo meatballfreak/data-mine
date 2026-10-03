@@ -53,7 +53,7 @@ async function fetchSubmissions(activityId: string): Promise<SubmissionRow[]> {
   const { data, error } = await supabase
     .from('submissions')
     .select(
-      'id, profile_id, answers, status, created_at, reviewed_at, profiles(full_name)',
+      'id, profile_id, answers, file_name, file_url, status, created_at, reviewed_at, profiles(full_name)',
     )
     .eq('activity_id', activityId)
     .order('created_at', { ascending: false });
@@ -83,6 +83,8 @@ async function fetchSubmissions(activityId: string): Promise<SubmissionRow[]> {
       profileId: row.profile_id as string,
       fullName: profile?.full_name ?? null,
       answers,
+      fileName: (row.file_name as string | null) ?? null,
+      fileUrl: (row.file_url as string | null) ?? null,
       status: row.status as 'submitted' | 'reviewed',
       createdAt: row.created_at as string,
       reviewedAt: (row.reviewed_at as string | null) ?? null,
@@ -136,17 +138,16 @@ export default async function EditActivityPage({
         </p>
       </div>
       <EditActivityForm activity={activity} groups={groups} />
-      {activity.type === 'qa' ? (
-        <div className="space-y-2">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
-            Submissions ({submissions.length})
-          </h2>
-          <SubmissionsList
-            questions={activity.questions}
-            submissions={submissions}
-          />
-        </div>
-      ) : null}
+      <div className="space-y-2">
+        <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
+          Submissions ({submissions.length})
+        </h2>
+        <SubmissionsList
+          activityType={activity.type}
+          questions={activity.questions}
+          submissions={submissions}
+        />
+      </div>
     </section>
   );
 }
