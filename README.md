@@ -6,7 +6,7 @@ Hosted at: https://data-mine-eight.vercel.app
 
 ## Status
 
-Phase 3 of 9 complete. Delivered so far: Google OAuth (Supabase), role-gated admin/trainee dashboards, dark UI shell, core schema + RLS, admin group CRUD, and QR-based trainee onboarding (per-group QR codes, `/join/<token>` flow, sign-in redirect preservation, trainee dashboard shows joined groups). Activities and Drive uploads land in Phases 4–7.
+Phase 4 of 9 complete. Delivered so far: Google OAuth (Supabase), role-gated admin/trainee dashboards, dark UI shell, core schema + RLS, admin group CRUD, QR-based trainee onboarding (per-group QR codes, `/join/<token>` flow, sign-in redirect preservation, trainee dashboard shows joined groups), and admin activity CRUD (Q&A or file-upload activities with questions editor and multi-group assignment). Trainee activity submission + Drive uploads land in Phases 5–7.
 
 ## Deploy setup (hosted on Vercel)
 
