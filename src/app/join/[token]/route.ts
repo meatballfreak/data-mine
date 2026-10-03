@@ -22,6 +22,10 @@ export async function GET(
   }
 
   const { user } = await getCurrentUser();
+  console.log('[join] hit', {
+    token: token.slice(0, 8) + '…',
+    user: user ? { id: user.id, email: user.email } : null,
+  });
   if (!user) {
     const next = `/join/${encodeURIComponent(token)}`;
     return NextResponse.redirect(
@@ -60,10 +64,14 @@ export async function GET(
     );
 
   if (insertError) {
-    console.error('[join] membership insert failed', insertError);
+    console.error('[join] membership insert failed', insertError, {
+      groupId: group.id,
+      profileId: user.id,
+    });
     return NextResponse.redirect(`${origin}/dashboard?joinError=insert`);
   }
 
+  console.log('[join] success', { groupId: group.id, profileId: user.id });
   return NextResponse.redirect(
     `${origin}/dashboard?joined=${encodeURIComponent(group.id)}`,
   );

@@ -6,7 +6,14 @@ import { safeNext } from '@/lib/safeNext';
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get('code');
-  const next = safeNext(searchParams.get('next'));
+  const rawNext = searchParams.get('next');
+  const next = safeNext(rawNext);
+
+  console.log('[auth/callback] hit', {
+    hasCode: !!code,
+    rawNext,
+    safeNext: next,
+  });
 
   if (!code) {
     return NextResponse.redirect(`${origin}/login?error=1`);
@@ -16,6 +23,7 @@ export async function GET(request: NextRequest) {
   const { error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error) {
+    console.error('[auth/callback] exchangeCodeForSession failed', error);
     return NextResponse.redirect(`${origin}/login?error=1`);
   }
 
